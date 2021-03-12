@@ -6,6 +6,7 @@ using System;
 using System.Reflection;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using System.IO;
 
 namespace TrackerBot
 {
@@ -29,9 +30,7 @@ namespace TrackerBot
 			client.Log += Log;
 			services = new Initialize(commands, client).BuildServiceProvider();
 
-			JsonConvert.DeserializeObject("token.json");
-
-			var token = "";
+			var token = File.ReadAllText("token.txt"); //Taken from a local file called token.txt, don't want to publish my token :)
 
 			CommandHandler commandHandler = new CommandHandler(services, client, commands);
 			await commandHandler.InstallCommandsAsync();
@@ -39,14 +38,14 @@ namespace TrackerBot
 			await client.LoginAsync(TokenType.Bot, token);
 			await client.StartAsync();
 
-			//client.Ready += Done;
+			client.Ready += Done;
 
 			await Task.Delay(-1);
 		}
 
 		private async Task Done()
 		{
-			var chnl = client.GetChannel(634800814170439706) as IMessageChannel;
+			var chnl = client.GetChannel(783853270229450772) as IMessageChannel;
 			if (chnl != null) await chnl.SendMessageAsync("Attendance Tracker has opened.");
 		}
 
