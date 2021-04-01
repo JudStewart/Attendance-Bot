@@ -1,17 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Discord;
+﻿using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
-using Google.Apis.Auth.OAuth2;
 using Google.Apis.Sheets.v4;
-using Data = Google.Apis.Sheets.v4.Data;
-using Google.Apis.Services;
-using Google.Apis.Util.Store;
-using System.IO;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Attendance_Bot
 {
@@ -90,9 +83,15 @@ namespace Attendance_Bot
 			var voiceChannel = client.GetChannel(775563983737847859) as IVoiceChannel;
 
 			var usersInVC = voiceChannel.GetUsersAsync();
-			for (usersInVC.)
+			await foreach (SocketUser u in usersInVC)
+			{
+				if (u.Equals(user))
+				{
+					//TODO: track user as in attendance once google sheet integration is done
+					return;
+				}
+			}
 
-			Console.WriteLine($"Child thread has received the channel. It is {channel}");
 			if (channel != null) await channel.SendMessageAsync($"{user.Mention} <:lionLate:339569494899032076>");
 			else Console.WriteLine("The channel was null.");
 		}
