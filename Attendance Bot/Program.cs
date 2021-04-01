@@ -38,7 +38,7 @@ namespace TrackerBot
 			await client.LoginAsync(TokenType.Bot, token);
 			await client.StartAsync();
 
-			client.Ready += Done;
+			//client.Ready += Done;
 
 			await Task.Delay(-1);
 		}
