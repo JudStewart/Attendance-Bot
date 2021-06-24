@@ -2,9 +2,15 @@
 using Discord.Commands;
 using Discord.WebSocket;
 using Google.Apis.Sheets.v4;
+using Google.Apis.Auth.OAuth2;
+using Data = Google.Apis.Sheets.v4.Data;
+using Google.Apis.Services;
+using Google.Apis.Util.Store;
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace Attendance_Bot
 {
@@ -12,6 +18,9 @@ namespace Attendance_Bot
 	{
 		readonly static string[] Scopes = { SheetsService.Scope.Spreadsheets };
 		readonly static string ApplicationName = "Attendance Tracker";
+		//This is the ID for my attendance google sheet, if you want to use a different one you should change this.
+		// (Better practice would probably be to read this in with the token, but I figure you probably won't have permission
+		//  to edit it anyway)
 		readonly static string sheetID = "1QzUN-oLblObDihNUoUB6PL1a-HOr4MdMwBl1d9wtrc0";
 		private readonly DiscordSocketClient client;
 		private readonly CommandService commands;
@@ -36,6 +45,7 @@ namespace Attendance_Bot
 		[Summary("Adds someone to the schedule for a specific time.")]
 		public async Task ScheduleAsync(SocketUser user, string time)
 		{
+			//TODO: no error message on "!schedule @user" with no time
 			if (user == null || time == null)
 			{
 				await ReplyAsync("Command arguments invalid. Use \"!schedule @username time\"");
@@ -57,10 +67,11 @@ namespace Attendance_Bot
 			int millisecondsUntil = (int)(target - DateTime.Now).TotalMilliseconds;
 			if (millisecondsUntil <= 0)
 			{
-				await ReplyAsync($"Your time is in the past dummy! {target} has already passed!");
+				await ReplyAsync($"Your time ({target}) is in the past!");
 				return;
 			}
 
+			//starts a new thread that calls the ScheduleThread method, so that the bot can keep doing stuff while waiting for users
 			Thread childThread = new Thread(() => ScheduleThread(millisecondsUntil, user));
 			childThread.Start();
 
@@ -79,21 +90,82 @@ namespace Attendance_Bot
 			var channel = client.GetChannel(channelID) as IMessageChannel;
 
 			//This is the channel ID of our voice channel. I only want to make fun of them
-			//if they didn't actually get on, so I need to check that they're not connected.
+			//if they didn't actually get on, so I need to check that they're not connected.s
 			var voiceChannel = client.GetChannel(775563983737847859) as IVoiceChannel;
 
-			var usersInVC = voiceChannel.GetUsersAsync();
-			await foreach (SocketUser u in usersInVC)
+			UserCredential credential;
+			
+			using (var stream = 
+				new FileStream("credentials.json", FileMode.Open, FileAccess.Read))
 			{
-				if (u.Equals(user))
-				{
-					//TODO: track user as in attendance once google sheet integration is done
-					return;
-				}
+				string credPath = "token.json";
+				credential = GoogleWebAuthorizationBroker.AuthorizeAsync(
+					GoogleClientSecrets.Load(stream).Secrets,
+					Scopes,
+					"user",
+					CancellationToken.None,
+					new FileDataStore(credPath, true)).Result;
+				Console.WriteLine($"Google Sheets credential file saved to {credPath}");
 			}
 
-			if (channel != null) await channel.SendMessageAsync($"{user.Mention} <:lionLate:339569494899032076>");
-			else Console.WriteLine("The channel was null.");
+			SheetsService service = new SheetsService(new BaseClientService.Initializer()
+			{
+				HttpClientInitializer = credential,
+				ApplicationName = ApplicationName
+			});
+
+			//Sets a variable to represent the value input option we want (User entered; auto formats things like someone entered them into the sheet)
+			var valIn = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.USERENTERED;
+			//Sets a variable for the insert data option (overwrite; overwrites the empty row instead of inserting a new one)
+			var dataIn = SpreadsheetsResource.ValuesResource.AppendRequest.InsertDataOptionEnum.OVERWRITE;
+			
+			Data.ValueRange val = new Data.ValueRange();
+			//We need this to be a 2D list since it's a google sheet, which is 2D
+			IList<IList<Object>> list = new List<IList<Object>>();
+			//We're making a new row that's formatted as "Username, Discord ID, Absent or Present, Short Date, Long Time".
+			IList<Object> row = new List<Object>
+			{
+				user.Username,
+				user.ToString()
+			};
+
+			//Iterates through all the users in the voice channel to see if user is present
+			bool absent = true;
+			//var usersInVC = voiceChannel.GetUsersAsync();
+			//await foreach (IUser u in usersInVC)
+			//{
+			//	if (u.Id == user.Id)
+			//	{
+			//		absent = false;
+			//		row.Add("Present");
+			//		break;
+			//	}
+			//}
+
+			
+
+			if (absent)
+			{
+				//If the user is late, we @ them in the server and include an emoji of someone tapping a watch.
+				//TODO (maybe): Randomize messages from a pool of potential responses
+				if (channel != null) await channel.SendMessageAsync($"{user.Mention} <:lionLate:339569494899032076>");
+				else Console.WriteLine("The channel was null.");
+				//Add "Absent" to the row that will be inserted
+				row.Add("Absent");
+			}
+
+			row.Add(DateTime.Now.ToShortDateString());
+			row.Add(DateTime.Now.ToLongTimeString());
+
+			//add our row to the 2D list, and set the value range's values to be equal to that list.
+			list.Add(row);
+			val.Values = list;
+
+			//creates a request for appending "val" (5x1 row) to the sheet in the A2 to E2 range, or whatever's under it, in the sheet "Attendance Record"
+			var append = service.Spreadsheets.Values.Append(val, sheetID, "\'Attendance Record\'!A2:E2");
+			append.ValueInputOption = valIn;
+			append.InsertDataOption = dataIn;
+			append.Execute();
 		}
 	}
 }
