@@ -41,14 +41,42 @@ namespace Attendance_Bot
 			await ReplyAsync($"Username: {userInfo.Username}");
 		}
 
+		//[Command("schedule")]
+		//[Summary("Adds someone to the schedule for a specific time.")]
+		//public async Task ScheduleAsync()
+		//{
+		//	await ReplyAsync("Command arguments invalid. Use \"!schedule @username time\"");
+		//	return;
+		//}
+
+		//[Command("schedule")]
+		//[Summary("Adds someone to the schedule for a specific time.")]
+		//public async Task ScheduleAsync(string time)
+		//{
+		//	await ScheduleAsync(Context.User, time);
+		//	return;
+		//}
+
 		[Command("schedule")]
 		[Summary("Adds someone to the schedule for a specific time.")]
-		public async Task ScheduleAsync(SocketUser user, string time)
+		public async Task ScheduleAsync(string sUser = null, [Remainder]string time = null)
 		{
-			//TODO: no error message on "!schedule @user" with no time
-			if (user == null || time == null)
+			Console.WriteLine("[DEBUG] user = " + sUser ?? "null");
+			Console.WriteLine("[DEBUG] time = " + time ?? "null");
+
+			if (time == null || time == "")
 			{
 				await ReplyAsync("Command arguments invalid. Use \"!schedule @username time\"");
+				return;
+			}
+
+			sUser = sUser.Replace("<@!", "").Replace(">", "");
+			Console.WriteLine("[DEBUG] User ID to find: " + sUser);
+			SocketGuildUser user;
+			user = Context.Guild.GetUser(ulong.Parse(sUser));
+			if (user == null)
+			{
+				await ReplyAsync("There was an issue finding that user.");
 				return;
 			}
 
@@ -75,12 +103,12 @@ namespace Attendance_Bot
 			Thread childThread = new Thread(() => ScheduleThread(millisecondsUntil, user));
 			childThread.Start();
 
-			await ReplyAsync($"You're all set! {user.Username} is now scheduled to be on at {target} or earlier.");
+			await ReplyAsync($"You're all set! {user.Nickname ?? user.Username} is now scheduled to be on at {target} or earlier.");
 
 			//await ReplyAsync($"Once implemented, this will schedule {user.Mention} for {target}");
 		}
 
-		private async void ScheduleThread(int msUntil, SocketUser user)
+		private async void ScheduleThread(int msUntil, SocketGuildUser user)
 		{
 			Thread.Sleep(msUntil);
 
@@ -125,24 +153,13 @@ namespace Attendance_Bot
 			//We're making a new row that's formatted as "Username, Discord ID, Absent or Present, Short Date, Long Time".
 			IList<Object> row = new List<Object>
 			{
-				user.Username,
+				user.Nickname ?? user.Username,
 				user.ToString()
 			};
 
-			//Iterates through all the users in the voice channel to see if user is present
-			bool absent = true;
-			//var usersInVC = voiceChannel.GetUsersAsync();
-			//await foreach (IUser u in usersInVC)
-			//{
-			//	if (u.Id == user.Id)
-			//	{
-			//		absent = false;
-			//		row.Add("Present");
-			//		break;
-			//	}
-			//}
-
-			
+			SocketGuildUser guildUser = user as SocketGuildUser;
+			//if the user's voice channel is null or does not match our voice channel's ID, they're absent. Otherwise, they're in the voice channel and not absent.
+			bool absent = guildUser.VoiceChannel == null ? true : guildUser.VoiceChannel.Id != voiceChannel.Id;
 
 			if (absent)
 			{
@@ -152,6 +169,10 @@ namespace Attendance_Bot
 				else Console.WriteLine("The channel was null.");
 				//Add "Absent" to the row that will be inserted
 				row.Add("Absent");
+			}
+			else
+			{
+				row.Add("Present");
 			}
 
 			row.Add(DateTime.Now.ToShortDateString());
